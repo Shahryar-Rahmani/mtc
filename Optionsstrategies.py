@@ -1,8 +1,13 @@
-
 import streamlit as st
 import numpy as np
 import matplotlib.pyplot as plt
 import requests
+
+import streamlit as st
+import numpy as np
+import requests
+import pandas as pd
+import plotly.express as px  # Import Plotly Express
 
 # Function definitions
 @st.cache(ttl=300)
@@ -10,7 +15,18 @@ def get_stock_data(symbol, API_KEY):
     url = f"https://www.alphavantage.co/query?function=TIME_SERIES_DAILY&symbol={symbol}&apikey={API_KEY}"
     response = requests.get(url)
     response.raise_for_status()
-    return response.json()
+    data = response.json()['Time Series (Daily)']
+    df = pd.DataFrame(columns=['Date', 'Open', 'High', 'Low', 'Close'])
+    
+    for date, values in data.items():
+        row = {'Date': date, 'Open': float(values['1. open']), 'High': float(values['2. high']),
+               'Low': float(values['3. low']), 'Close': float(values['4. close'])}
+        # Correctly use pd.concat to add the new row
+        df = pd.concat([df, pd.DataFrame([row])], ignore_index=True)
+    
+    df['Date'] = pd.to_datetime(df['Date'])
+    df.sort_values('Date', inplace=True)
+    return df
 
 # Function to calculate the payoff for a call option
 def calculate_call_payoff(prices, strike, asset_price):
@@ -112,6 +128,7 @@ def calculate_iron_condor_payoff(asset_prices, strike_price_put_buy, premium_put
     iron_condor_payoff = long_put_payoff + short_put_payoff + short_call_payoff + long_call_payoff
     return iron_condor_payoff
 
+
 # Streamlit app layout
 st.title('Options Strategy Visualizer')
 
@@ -122,7 +139,9 @@ selected_symbol = st.selectbox("Select Stock Symbol", symbols)
 
 if st.button("Fetch Data"):
     stock_data = get_stock_data(selected_symbol, API_KEY)
-    st.write("Stock Data:", stock_data)
+    # Create a Plotly interactive line chart
+    fig = px.line(stock_data, x='Date', y=['Open', 'Close'], title='Stock Prices', labels={'value': 'Price (USD)', 'variable': 'Price Type'})
+    st.plotly_chart(fig)
     # Process and display more data if necessary, like futures_data, iv_data, etc.
 
 # Strategy selection
@@ -208,6 +227,8 @@ elif strategy == "Put":
 elif strategy == "Straddle":
     payoffs = calculate_straddle_payoff(asset_prices, strike_price, premium)
     strategy_label = 'Straddle Payoff'
+    break_even_up = strike_price + premium
+    break_even_down = strike_price - premium
 elif strategy == "Covered Call":
     payoffs = calculate_covered_call_payoff(asset_prices, purchase_price, strike_price, premium)
     strategy_label = 'Covered Call Payoff'
@@ -248,7 +269,7 @@ elif strategy == "Iron Condor":
 # Common plot settings
 ax.plot(asset_prices, payoffs, label=strategy_label)
 ax.axhline(0, color='grey', lw=1)
-ax.set_xlabel('Asset Prices')
+ax.set_xlabel('Stock Price')
 ax.set_ylabel('Profit / Loss')
 ax.set_title(f'{strategy} Payoff at Different Prices')
 
@@ -265,7 +286,7 @@ elif strategy in ["Long Call Butterfly Spread", "Iron Butterfly", "Iron Condor"]
     ax.fill_between(asset_prices, payoffs, 0, where=~profit_indices, color='red', alpha=0.3)
     
     # For Iron Condor, max profit occurs between the short put and short call strike prices
-    if strategy == "Iron Condor":
+elif strategy == "Iron Condor":
         profit_range = (asset_prices > strike_price_put_sell) & (asset_prices < strike_price_call_sell)
         ax.fill_between(asset_prices, payoffs, 0, where=profit_range, color='green', alpha=0.3)
         ax.fill_between(asset_prices, payoffs, 0, where=~profit_range, color='red', alpha=0.3)
@@ -286,10 +307,46 @@ elif strategy in ["Long Call Butterfly Spread", "Iron Butterfly"]:
     ax.fill_between(asset_prices, payoffs, 0, where=profit_indices, color='green', alpha=0.3)
     ax.fill_between(asset_prices, payoffs, 0, where=loss_indices, color='red', alpha=0.3)
 
+elif strategy == "Protective Collar":
+    payoffs = calculate_protective_collar_payoff(asset_prices, purchase_price, strike_price_put, premium_put, strike_price_call, premium_call)
+    strategy_label = 'Protective Collar Payoff'
+
+    # Calculate maximum profit and maximum loss
+    max_profit = strike_price_call - purchase_price + premium_call
+    max_loss = purchase_price - strike_price_put + premium_put
+
+    # Shading for profit (green) above the x-axis and loss (red) below the x-axis
+    ax.fill_between(asset_prices, payoffs, where=(payoffs > 0), color='green', alpha=0.3, interpolate=True)
+    ax.fill_between(asset_prices, payoffs, where=(payoffs < 0), color='red', alpha=0.3, interpolate=True)
+
+    # Max profit and loss lines
+    ax.axhline(y=max_profit, color='blue', linestyle='--', label=f'Max Profit: ${max_profit:.2f}')
+    ax.axhline(y=-max_loss, color='blue', linestyle='--', label=f'Max Loss: ${-max_loss:.2f}')
+
+    # Ensure the max loss line is below the x-axis
+    ax.axhline(0, color='grey', lw=1)  # Add the x-axis line
+    ax.text(asset_prices[-1], max_profit, f' Max Profit: ${max_profit}', verticalalignment='bottom')
+    ax.text(asset_prices[-1], -max_loss, f' Max Loss: ${-max_loss}', verticalalignment='top')
+
+elif strategy == "Straddle":
+    # Calculate break-even points
+    upper_break_even = strike_price + premium
+    lower_break_even = strike_price - premium
+
+    profit_indices = (asset_prices < break_even_down) | (asset_prices > break_even_up)
+    ax.fill_between(asset_prices, payoffs, 0, where=(asset_prices >= upper_break_even) & (payoffs > 0), color='green', alpha=0.3)
+    ax.fill_between(asset_prices, payoffs, 0, where=(asset_prices <= lower_break_even) & (payoffs > 0), color='green', alpha=0.3)
+    ax.fill_between(asset_prices, payoffs, 0, where=(payoffs <= 0), color='red', alpha=0.3)
+
+
+# Break-even lines
+    ax.axvline(x=break_even_up, color='blue', linestyle='--', label=f'Break-Even Up ${break_even_up:.2f}')
+    ax.axvline(x=break_even_down, color='purple', linestyle='--', label=f'Break-Even Down ${break_even_down:.2f}')
+    ax.text(break_even_up, 0, f' ${break_even_up:.2f}', horizontalalignment='right')
+    ax.text(break_even_down, 0, f' ${break_even_down:.2f}', horizontalalignment='left')
+
 # Add legend and layout adjustments
 ax.legend()
 plt.tight_layout()
 
 st.pyplot(fig)
-
-
