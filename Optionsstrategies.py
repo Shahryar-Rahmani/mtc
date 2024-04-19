@@ -21,8 +21,9 @@ def get_stock_data(symbol, API_KEY):
     for date, values in data.items():
         row = {'Date': date, 'Open': float(values['1. open']), 'High': float(values['2. high']),
                'Low': float(values['3. low']), 'Close': float(values['4. close'])}
-        # Correctly use pd.concat to add the new row
-        df = pd.concat([df, pd.DataFrame([row])], ignore_index=True)
+        row_df = pd.DataFrame([row])  # Convert a single-row dict to DataFrame
+        df = pd.concat([df, row_df], ignore_index=True)
+
     
     df['Date'] = pd.to_datetime(df['Date'])
     df.sort_values('Date', inplace=True)
@@ -134,14 +135,15 @@ st.title('Options Strategy Visualizer')
 
 # API data fetch
 API_KEY = st.secrets["API_KEY"]
-symbols = ["AAPL", "MSFT", "GOOGL", "AMZN"]
+symbols = ["AAPL", "MSFT", "GOOGL", "AMZN", "SPY", "QQQ", "DIA", "META", "NFLX", "NVDA", "TSLA", "AMD"]
 selected_symbol = st.selectbox("Select Stock Symbol", symbols)
 
 if st.button("Fetch Data"):
     stock_data = get_stock_data(selected_symbol, API_KEY)
-    # Create a Plotly interactive line chart
-    fig = px.line(stock_data, x='Date', y=['Open', 'Close'], title='Stock Prices', labels={'value': 'Price (USD)', 'variable': 'Price Type'})
+    # Create a Plotly interactive line chart showing only the closing prices
+    fig = px.line(stock_data, x='Date', y='Close', title='Stock Closing Prices', labels={'Close': 'Closing Price (USD)'})
     st.plotly_chart(fig)
+
     # Process and display more data if necessary, like futures_data, iv_data, etc.
 
 # Strategy selection
@@ -159,6 +161,11 @@ if strategy == "Covered Call":
 elif strategy == "Married Put":
     purchase_price = st.number_input('Purchase Price of Underlying Asset', value=100.0, key='purchase_price')
     premium_paid = st.number_input('Premium Paid for Put Option', value=10.0, key='premium_paid')
+elif strategy == "Straddle":
+    # Inputs for the Straddle strategy
+    strike_price = st.number_input('Strike Price for Both Call and Put', min_value=0, value=100, key='strike_price_straddle')
+    premium_call = st.number_input('Premium Paid for Call Option', min_value=0.0, value=5.0, key='premium_call_straddle')
+    premium_put = st.number_input('Premium Paid for Put Option', min_value=0.0, value=5.0, key='premium_put_straddle')
 elif strategy == "Bull Call Spread":
     # For Bull Call Spread, we need two strike prices and two premiums
     strike_price_long_call = st.number_input('Strike Price for Long Call', min_value=0, value=100, key='strike_price_long_call')
@@ -174,27 +181,27 @@ elif strategy == "Bull Put Spread":
 # Inputs specific to Protective Collar
 elif strategy == "Protective Collar":
     purchase_price = st.number_input('Purchase Price of Underlying Asset', value=100.0, key='purchase_price_collar')
-    strike_price_put = st.number_input('Strike Price for Long Put', min_value=0, value=90, key='strike_price_put')
+    strike_price_put = st.number_input('Strike Price for Long Put', min_value=0, value=95, key='strike_price_put')
     premium_put = st.number_input('Premium for Long Put', min_value=0.0, value=5.0, key='premium_put')
     strike_price_call = st.number_input('Strike Price for Short Call', min_value=0, value=110, key='strike_price_call')
     premium_call = st.number_input('Premium for Short Call', min_value=0.0, value=5.0, key='premium_call')
 elif strategy == "Long Call Butterfly Spread":
     # For Long Call Butterfly Spread, we need three strike prices and three premiums
     strike_price_low = st.number_input('Strike Price for Low Call', min_value=0, value=90, key='strike_price_low')
-    premium_low = st.number_input('Premium for Low Call', min_value=0.0, value=5.0, key='premium_low')
+    premium_low = st.number_input('Premium for Low Call', min_value=0.0, value=3.0, key='premium_low')
     strike_price_mid = st.number_input('Strike Price for Mid Call', min_value=0, value=100, key='strike_price_mid')
-    premium_mid = st.number_input('Premium for Mid Call', min_value=0.0, value=10.0, key='premium_mid')
+    premium_mid = st.number_input('Premium for Mid Call', min_value=0.0, value=4.0, key='premium_mid')
     strike_price_high = st.number_input('Strike Price for High Call', min_value=0, value=110, key='strike_price_high')
-    premium_high = st.number_input('Premium for High Call', min_value=0.0, value=5.0, key='premium_high')
+    premium_high = st.number_input('Premium for High Call', min_value=0.0, value=8.0, key='premium_high')
 # Inputs specific to Iron Butterfly
 elif strategy == "Iron Butterfly":
     # For an Iron Butterfly, we need the strike price and premiums for the ATM options and the OTM put and call
     strike_price_atm = st.number_input('Strike Price for ATM Options', min_value=0, value=100, key='strike_price_atm')
     premium_atm = st.number_input('Premium for ATM Options', min_value=0.0, value=10.0, key='premium_atm')
     strike_price_otm_put = st.number_input('Strike Price for OTM Put', min_value=0, value=90, key='strike_price_otm_put')
-    premium_otm_put = st.number_input('Premium for OTM Put', min_value=0.0, value=2.0, key='premium_otm_put')
+    premium_otm_put = st.number_input('Premium for OTM Put', min_value=0.0, value=10.0, key='premium_otm_put')
     strike_price_otm_call = st.number_input('Strike Price for OTM Call', min_value=0, value=110, key='strike_price_otm_call')
-    premium_otm_call = st.number_input('Premium for OTM Call', min_value=0.0, value=2.0, key='premium_otm_call')
+    premium_otm_call = st.number_input('Premium for OTM Call', min_value=0.0, value=3.0, key='premium_otm_call')
     # Inputs specific to Iron Condor
 elif strategy == "Iron Condor":
     strike_price_put_buy = st.number_input('Strike Price for Buy Put', min_value=0, value=80, key='strike_price_put_buy')
@@ -269,8 +276,8 @@ elif strategy == "Iron Condor":
 # Common plot settings
 ax.plot(asset_prices, payoffs, label=strategy_label)
 ax.axhline(0, color='grey', lw=1)
-ax.set_xlabel('Stock Price')
-ax.set_ylabel('Profit / Loss')
+ax.set_xlabel('Stock Price (USD)')
+ax.set_ylabel('Profit / Loss (USD) x 100')
 ax.set_title(f'{strategy} Payoff at Different Prices')
 
 # Shading for profit/loss based on the strategy
@@ -308,25 +315,31 @@ elif strategy in ["Long Call Butterfly Spread", "Iron Butterfly"]:
     ax.fill_between(asset_prices, payoffs, 0, where=loss_indices, color='red', alpha=0.3)
 
 elif strategy == "Protective Collar":
+    # Calculate payoffs
     payoffs = calculate_protective_collar_payoff(asset_prices, purchase_price, strike_price_put, premium_put, strike_price_call, premium_call)
+
+# Strategy-specific annotations and markers
     strategy_label = 'Protective Collar Payoff'
-
-    # Calculate maximum profit and maximum loss
-    max_profit = strike_price_call - purchase_price + premium_call
-    max_loss = purchase_price - strike_price_put + premium_put
-
-    # Shading for profit (green) above the x-axis and loss (red) below the x-axis
-    ax.fill_between(asset_prices, payoffs, where=(payoffs > 0), color='green', alpha=0.3, interpolate=True)
+# Calculate maximum profit and maximum loss
+    max_profit = (strike_price_call - purchase_price) - (premium_put - premium_call)
+    max_loss = (purchase_price - strike_price_put) - (premium_put - premium_call)
+    
+    # Create plot
+    fig, ax = plt.subplots()
+    ax.plot(asset_prices, payoffs, label=strategy_label)
+    
+# Shading for profit and loss areas
+    ax.fill_between(asset_prices, payoffs, where=(payoffs >= 0), color='green', alpha=0.3, interpolate=True)
     ax.fill_between(asset_prices, payoffs, where=(payoffs < 0), color='red', alpha=0.3, interpolate=True)
-
-    # Max profit and loss lines
+    
+# Max profit and loss lines and annotations
     ax.axhline(y=max_profit, color='blue', linestyle='--', label=f'Max Profit: ${max_profit:.2f}')
-    ax.axhline(y=-max_loss, color='blue', linestyle='--', label=f'Max Loss: ${-max_loss:.2f}')
-
-    # Ensure the max loss line is below the x-axis
-    ax.axhline(0, color='grey', lw=1)  # Add the x-axis line
-    ax.text(asset_prices[-1], max_profit, f' Max Profit: ${max_profit}', verticalalignment='bottom')
-    ax.text(asset_prices[-1], -max_loss, f' Max Loss: ${-max_loss}', verticalalignment='top')
+    # The max loss should be plotted as a negative value because it represents a loss
+    ax.axhline(y=-max_loss, color='orange', linestyle='--', label=f'Max Loss: ${-max_loss:.2f}')
+    # Set axis labels and title
+    ax.set_xlabel('Stock Price (USD)')
+    ax.set_ylabel('Profit / Loss (USD)')
+    ax.set_title('Protective Collar Strategy Payoff')
 
 elif strategy == "Straddle":
     # Calculate break-even points
