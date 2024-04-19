@@ -343,20 +343,28 @@ elif strategy == "Protective Collar":
 
 elif strategy == "Straddle":
     # Calculate break-even points
-    upper_break_even = strike_price + premium
-    lower_break_even = strike_price - premium
 
-    profit_indices = (asset_prices < break_even_down) | (asset_prices > break_even_up)
-    ax.fill_between(asset_prices, payoffs, 0, where=(asset_prices >= upper_break_even) & (payoffs > 0), color='green', alpha=0.3)
-    ax.fill_between(asset_prices, payoffs, 0, where=(asset_prices <= lower_break_even) & (payoffs > 0), color='green', alpha=0.3)
-    ax.fill_between(asset_prices, payoffs, 0, where=(payoffs <= 0), color='red', alpha=0.3)
+    total_premium = premium * 2
+    # Calculate break-even points
+    upper_break_even = strike_price + total_premium
+    lower_break_even = strike_price - total_premium
 
+    # Calculate the profit indices (where the strategy is profitable)
+    profit_indices = (asset_prices < lower_break_even) | (asset_prices > upper_break_even)
+    
+    # Fill between for profit areas
+    ax.fill_between(asset_prices, payoffs, 0, where=profit_indices, color='green', alpha=0.3)
+    
+    # Fill between for loss areas
+    ax.fill_between(asset_prices, payoffs, 0, where=~profit_indices, color='red', alpha=0.3)
 
-# Break-even lines
-    ax.axvline(x=break_even_up, color='blue', linestyle='--', label=f'Break-Even Up ${break_even_up:.2f}')
-    ax.axvline(x=break_even_down, color='purple', linestyle='--', label=f'Break-Even Down ${break_even_down:.2f}')
-    ax.text(break_even_up, 0, f' ${break_even_up:.2f}', horizontalalignment='right')
-    ax.text(break_even_down, 0, f' ${break_even_down:.2f}', horizontalalignment='left')
+    # Break-even lines
+    ax.axvline(x=upper_break_even, color='blue', linestyle='--', label=f'Break-Even Up ${upper_break_even:.2f}')
+    ax.axvline(x=lower_break_even, color='purple', linestyle='--', label=f'Break-Even Down ${lower_break_even:.2f}')
+    
+    # Text for break-even points
+    ax.text(upper_break_even, 0, f' ${upper_break_even:.2f}', horizontalalignment='right', verticalalignment='bottom')
+    ax.text(lower_break_even, 0, f' ${lower_break_even:.2f}', horizontalalignment='left', verticalalignment='bottom')
 
 # Add legend and layout adjustments
 ax.legend()
